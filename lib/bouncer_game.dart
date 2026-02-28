@@ -14,7 +14,7 @@ class BouncerGame extends StatefulWidget {
 }
 
 class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin{
-  double paddleX = 200.0; // Paddle start position
+  double paddleX = 180.0; // Paddle start position
   double screenWidth = 400.0;
   double screenHeight = 800.0;
   double ballX = 200.0;
@@ -111,7 +111,9 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
     paddleX = paddleX.clamp(0.0, screenWidth - 150.0);
 
     // 1. BLOCKS LOOP backward to safely remove blocks while iterating
-    for (int i = blocks.length - 1; i >= 0; i--) {
+    bool hitBlock = false; // To prevent multiple hits in one frame
+
+    for (int i = blocks.length - 1; i >= 0 && !hitBlock; i--) {
       final block = blocks[i];
       final drawX = block['x']! - 15; 
       final drawY = block['y']! + 50;
@@ -121,7 +123,7 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
       final blockBottom = drawY + 25;
       
       // ANY OVERLAP = hit (ball radius included)
-      final hitMargin = 2.5 * ballRadius;
+      final hitMargin = 0.8 * ballRadius;
 
       if ((ballX + hitMargin > blockLeft &&
           ballX - hitMargin < blockRight) &&
@@ -140,18 +142,19 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
         }
         
         blocks.removeAt(i);
-        setState(() {}); // Update UI immediately after block removal 
+        // setState(() {}); // Update UI immediately after block removal 
         score += 10;
         if (soundOn) sfxPlayer.play(AssetSource('sounds/destroy.wav'));
+        hitBlock = true;
         break;  
       }
     }
 
     // 2. PADDLE COLLISION 
     final paddleLeft = paddleX;
-    final paddleRight = paddleX + 150;
-    final paddleTop = screenHeight - 180;
-    final paddleBottom = screenHeight - 150;
+    final paddleRight = paddleX + 150; 
+    final paddleTop = screenHeight - 180; // 150 + 30 (paddle height) = 180
+    final paddleBottom = screenHeight - 150; 
 
     if (ballY + ballRadius >= paddleTop && 
         ballY <= paddleBottom + ballRadius * 2 &&  
@@ -208,23 +211,19 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
       vy = -vy;
     }
 
+    // 7. WIN/LOSE MESSAGES (after blocks change)
     // do NOT bounce at bottom; just detect lose
     if (ballY + ballRadius * 2 >= screenHeight && !gameLost) {
       // ball touched bottom edge
       if (soundOn) sfxPlayer.play(AssetSource('sounds/youlost.mp3'));
       gameLost = true;
+      return;
     }
 
-
-    // 7. WIN/LOSE MESSAGES (after blocks change)
     if (blocks.isEmpty && !gameWon) {
       if (soundOn) sfxPlayer.play(AssetSource('sounds/youwin.mp3'));
       gameWon = true;
     } 
-    if (ballY >= screenHeight - 120 && !gameLost) {
-      if (soundOn) sfxPlayer.play(AssetSource('sounds/youlost.mp3'));
-      gameLost = true;
-    }
   }
   
 
@@ -278,12 +277,12 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
                   top: block['y']! + 50,
                   left: block['x']! - 15,
                   child: Container(
-                    width: 55,
+                    width: 56,
                     height: 25,
                     decoration: BoxDecoration(
                       color: blockColors[colorIndex],
                       borderRadius: BorderRadius.circular(3),
-                      border: Border.all(color: Colors.white, width: 1),
+                      // border: Border.all(color: Colors.white, width: 1),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black26,
@@ -326,7 +325,7 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
 
               // HUD: Score, blocks left, tilt, pause/sound buttons
               Positioned(
-                top: 40,
+                top: 50,
                 left: 20,
                 right: 10,
                 child: Column(
@@ -336,8 +335,7 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
                         Text('BOUNCER', 
                         style: GoogleFonts.cherryCreamSoda(
                           color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)
-                        ),
-                        Spacer(),
+                        ),                        Spacer(),
                         IconButton(icon: Icon(Icons.pause, size: 30, color: Colors.white), 
                           onPressed: () => setState(() => paused = !paused)),
                         IconButton(icon: Icon(soundOn ? Icons.volume_up : Icons.volume_off, size: 30, color: Colors.white,), 
@@ -346,17 +344,26 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
                     ),
                     Row(
                       children: [
+                        Text('Tilt device to bounce ball and clear blocks!', 
+                          style: GoogleFonts.poppins(color: Colors.white)
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 5),
+                    Row(
+                      children: [
                         Icon(Icons.sports_esports_outlined, size: 18, color: Colors.white),
                         SizedBox(width: 5),
                         Text('Score: $score | Blocks: ${blocks.length}', 
                           style: GoogleFonts.poppins(color: Colors.white)
                         ),
-                        Spacer(),
-                        Text('Tilt: ${lastTilt.toStringAsFixed(1)} P:${paddleX.toStringAsFixed(0)}', 
-                          style: GoogleFonts.poppins(color: Colors.white)
-                        ),
+                        // Spacer(),
+                        // Text('Tilt: ${lastTilt.toStringAsFixed(1)} P:${paddleX.toStringAsFixed(0)}', 
+                        //   style: GoogleFonts.poppins(color: Colors.white)
+                        // ),
                       ],
                     ),
+                    SizedBox(height: 10),
                   ],
                 ),
               ),
