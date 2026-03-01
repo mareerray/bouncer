@@ -32,13 +32,13 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
 
   // Paddle
   final double paddleHeight = 20.0;
-  final double paddleWidth = 150.0;
-  double paddleX = 180.0; // Paddle start position 
+  final double paddleWidth = 180.0;
+  double paddleX = 0.0; // Paddle start position (updated in initState)
 
   // Paddle control 
-  static const double sensitivity = 250.0;  // How far paddle moves per tilt: higher=faster response
+  static const double normalSensitivity = 350.0;  // How far paddle moves per tilt: higher=faster 
+  static const double moreSensitivity = 400.0; // Can be adjusted for difficulty
   static const double smoothing = 0.25;  // Speed of paddle slide: 0.1=smooth, 0.3=quick, 0.5=instant
-
 
   // Ball velocity (pixels per frame)
   double vx = 4.0; // horizontal speed
@@ -46,9 +46,10 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
 
   // Accelerometer subscription
   late StreamSubscription<UserAccelerometerEvent> accelSubscription;
-  double targetPaddleX = 200.0;  // Smooth target
+  double targetPaddleX = 0.0;  // Smooth target
   double accumulatedTime = 0.0;
   final double fixedDeltaTime = 1/60.0; // ~16ms per frame
+  double tilt = 0.0;  // Current tilt value for display
 
   bool get isGameActive => !paused && !gameWon && !gameLost;
   bool soundOn = true;
@@ -67,26 +68,35 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
     // Initialize blocks from helper function
     blocks = createBouncerBlocks(); 
 
-    // Get screen size 
+    // GAME START: Get screen size and set initial paddle position
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final size = MediaQuery.of(context).size;
       setState(() {
         screenWidth = size.width;
         screenHeight = size.height;
+        paddleX = screenWidth / 2 - paddleWidth / 2; // Center paddle
+        targetPaddleX = screenWidth / 2 - paddleWidth / 2; // Center target as well
       });
     });
 
+    // DURING GAMEPLAY: Listen to accelerometer for paddle control
     accelSubscription = userAccelerometerEventStream().listen(
       (UserAccelerometerEvent event) {
-        if (isGameActive) {
-          // Very small deadzone: ignore tiny noise only
-          if (event.x.abs() > 0.1) { // deadzone threshold: ignore very small tilts
-            final double adjustedTilt = event.x; // left = negative, right = positive
-            targetPaddleX = (screenWidth / 2) + (adjustedTilt * sensitivity);
-            targetPaddleX = targetPaddleX.clamp(0.0, screenWidth - 150.0);
+        if (!isGameActive) return;
+
+          tilt = event.x; 
+          final sensitivity = (tilt < 0) ? moreSensitivity : normalSensitivity; // More sensitivity when tilting left (negative)
+
+                    // Very small deadzone: ignore tiny noise only
+          if (tilt.abs() > 0.2) { // deadzone threshold: ignore very small tilts
+             double newTarget = (screenWidth / 2) + (tilt * sensitivity);
+
+            // SMOOTH the TARGET too! (stops jerking)
+            targetPaddleX += (newTarget - targetPaddleX) * smoothing;
+            targetPaddleX = targetPaddleX.clamp(0.0, screenWidth - paddleWidth);
           }
           // ← When tilt < 0.5, NOTHING HAPPENS (paddle stays still, no drift)
-        }
+        
       },
     );
 
@@ -114,8 +124,8 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
     if (!isGameActive) return;
 
     // SMOOTH PADDLE - moves towards target each frame, creating a natural feel
-    paddleX += (targetPaddleX - paddleX) * smoothing;
-    paddleX = paddleX.clamp(0.0, screenWidth - 150.0);
+    paddleX += (targetPaddleX - paddleX) * smoothing; // Move a fraction towards target
+    paddleX = paddleX.clamp(0.0, screenWidth - paddleWidth);
 
     // 1. BLOCKS LOOP backward to safely remove blocks while iterating
     bool hitBlock = false; // To prevent multiple hits in one frame
@@ -177,7 +187,7 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
 
     // 2. PADDLE COLLISION 
     final paddleLeft = paddleX;
-    final paddleRight = paddleX + 150; 
+    final paddleRight = paddleX + paddleWidth; 
     final paddleTop = screenHeight - 180; // 150 + 30 (paddle height) = 180
     final paddleBottom = screenHeight - 150; 
 
@@ -270,7 +280,8 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
       ballY = 380.0;
       vx = 4.0;
       vy = 5.0;
-      paddleX = screenWidth / 2 - 50;
+      paddleX = screenWidth / 2 - paddleWidth / 2; // Center paddle
+      targetPaddleX = screenWidth / 2 - paddleWidth / 2;  
     });
   }
 
@@ -384,6 +395,10 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
                         Icon(Icons.sports_esports_outlined, size: 18, color: Colors.white),
                         SizedBox(width: 5),
                         Text('Score: $score | Blocks: ${blocks.length}', 
+                          style: GoogleFonts.poppins(color: Colors.white)
+                        ),
+                        Spacer(),
+                        Text('Tilt: ${tilt.toStringAsFixed(2)}', 
                           style: GoogleFonts.poppins(color: Colors.white)
                         ),
                       ],
