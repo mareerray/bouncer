@@ -27,7 +27,7 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
 
   double targetPaddleX = 200.0;  // Smooth target
   double lastTilt = 0.0;  // For smoothing
-  static const double sensitivity = 200.0;  // Tune: higher=faster response
+  static const double sensitivity = 300.0;  // Tune: higher=faster response
   static const double smoothing = 0.25;  // 0.1=smooth, 0.3=quick, 0.5=instant
 
   late StreamSubscription<UserAccelerometerEvent> accelSubscription;
@@ -71,9 +71,17 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
         lastTilt = lastTilt * 0.7 + event.x * 0.3;  // Low-pass filter (smooths noise)
         
         // 1. ignore small noise (deadzone)
-        if (event.x.abs() < 0.1) {  // Deadzone: ignore tiny noise (tune 0.08-0.15)
-          return;  // Skip updating target
+        // Use event.x directly, but reduce very small noise
+        if (event.x.abs() < 0.05) {  // smaller symmetric deadzone
+          targetPaddleX = screenWidth / 2;  // center when almost flat
+        } else {
+          final double adjustedTilt = event.x; // symmetric left/right
+          targetPaddleX = (screenWidth / 2) + (adjustedTilt * sensitivity);
+          targetPaddleX = targetPaddleX.clamp(0.0, screenWidth - 150.0);
         }
+        // if (event.x.abs() < 0.1) {  // Deadzone: ignore tiny noise (tune 0.08-0.15)
+        //   return;  // Skip updating target
+        // }
         
         // 2. use same sensitivity on left and right
         double adjustedTilt = lastTilt;
