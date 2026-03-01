@@ -14,49 +14,60 @@ class BouncerGame extends StatefulWidget {
 }
 
 class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin{
-  double paddleX = 180.0; // Paddle start position
+  late AnimationController _controller;
+  late AudioPlayer sfxPlayer;
+
+  // Screen size
   double screenWidth = 400.0;
   double screenHeight = 800.0;
-  double ballX = 200.0;
-  double ballY = 400.0;
+
+  // Blocks
+  late List<Map<String, dynamic>> blocks; // ← created from helper function
+  final List<Color> blockColors = createBouncerBlockColors(); // colors from helper
+
+  // Ball
+  double ballX = 20.0; // Start position (top-left of ball)
+  double ballY = 380.0; // Start position
+  final double ballRadius = 10.0;
+
+  // Paddle
+  final double paddleHeight = 20.0;
+  final double paddleWidth = 150.0;
+  double paddleX = 180.0; // Paddle start position 
+
+  // Paddle control 
+  static const double sensitivity = 250.0;  // How far paddle moves per tilt: higher=faster response
+  static const double smoothing = 0.25;  // Speed of paddle slide: 0.1=smooth, 0.3=quick, 0.5=instant
+
+
+  // Ball velocity (pixels per frame)
   double vx = 4.0; // horizontal speed
   double vy = 5.0; // vertical speed, positive=down
-  late AnimationController _controller;
-  final double ballRadius = 10.0;
-  final double paddleHeight = 20.0;
 
-  double targetPaddleX = 200.0;  // Smooth target
-  double lastTilt = 0.0;  // For smoothing
-  static const double sensitivity = 300.0;  // Tune: higher=faster response
-  static const double smoothing = 0.25;  // 0.1=smooth, 0.3=quick, 0.5=instant
-
+  // Accelerometer subscription
   late StreamSubscription<UserAccelerometerEvent> accelSubscription;
-  final double speed = 15.0; // How fast paddle moves
-
+  double targetPaddleX = 200.0;  // Smooth target
   double accumulatedTime = 0.0;
   final double fixedDeltaTime = 1/60.0; // ~16ms per frame
 
-  late AudioPlayer sfxPlayer;
+  bool get isGameActive => !paused && !gameWon && !gameLost;
   bool soundOn = true;
   bool paused = false;
-  int score = 0;
-  
-  late List<Map<String, dynamic>> blocks; // ← now late, created in initState
-  final List<Color> blockColors = createBouncerBlockColors(); // colors from helper
-  
   bool gameWon = false;
   bool gameLost = false;
+  int score = 0;
 
   // ======== ====== Game initialize ======== ========
 
   @override
   void initState() {
     super.initState();
-
     sfxPlayer = AudioPlayer();
-    blocks = createBouncerBlocks(); // Initialize blocks from helper function
 
-    // Get screen size first
+    // Initialize blocks from helper function
+    blocks = createBouncerBlocks(); 
+
+    // Get screen size 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final size = MediaQuery.of(context).size;
       setState(() {
@@ -65,39 +76,27 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
       });
     });
 
-    accelSubscription = userAccelerometerEventStream().listen
-      ((UserAccelerometerEvent event) {
-      if (!paused && !gameWon && !gameLost) {
-        lastTilt = lastTilt * 0.7 + event.x * 0.3;  // Low-pass filter (smooths noise)
-        
-        // 1. ignore small noise (deadzone)
-        // Use event.x directly, but reduce very small noise
-        if (event.x.abs() < 0.05) {  // smaller symmetric deadzone
-          targetPaddleX = screenWidth / 2;  // center when almost flat
-        } else {
-          final double adjustedTilt = event.x; // symmetric left/right
-          targetPaddleX = (screenWidth / 2) + (adjustedTilt * sensitivity);
-          targetPaddleX = targetPaddleX.clamp(0.0, screenWidth - 150.0);
+    accelSubscription = userAccelerometerEventStream().listen(
+      (UserAccelerometerEvent event) {
+        if (isGameActive) {
+          // Very small deadzone: ignore tiny noise only
+          if (event.x.abs() > 0.1) { // deadzone threshold: ignore very small tilts
+            final double adjustedTilt = event.x; // left = negative, right = positive
+            targetPaddleX = (screenWidth / 2) + (adjustedTilt * sensitivity);
+            targetPaddleX = targetPaddleX.clamp(0.0, screenWidth - 150.0);
+          }
+          // ← When tilt < 0.5, NOTHING HAPPENS (paddle stays still, no drift)
         }
-        // if (event.x.abs() < 0.1) {  // Deadzone: ignore tiny noise (tune 0.08-0.15)
-        //   return;  // Skip updating target
-        // }
-        
-        // 2. use same sensitivity on left and right
-        double adjustedTilt = lastTilt;
+      },
+    );
 
-        // 3. convert tilt into paddle target
-        targetPaddleX = (screenWidth / 2) + (adjustedTilt * sensitivity);
-        targetPaddleX = targetPaddleX.clamp(0.0, screenWidth - 150.0);
-
-      }
-    });
-
+    // Animation for game loop (calls setState every frame)
     _controller = AnimationController(
       vsync: this,
       duration: Duration(seconds: 1), // ignored for game
     )..repeat(); // loop forever
 
+    // Update game state on each frame, using fixed timestep for consistent physics
     _controller.addListener(() {
       final delta = 1/60.0; // Approximate frame delta
       accumulatedTime += delta;
@@ -112,7 +111,7 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
   // ======== ====== Game logic ======== ========
 
   void updatePositions(double dt) {
-    if (paused || gameWon || gameLost) return;
+    if (!isGameActive) return;
 
     // SMOOTH PADDLE - moves towards target each frame, creating a natural feel
     paddleX += (targetPaddleX - paddleX) * smoothing;
@@ -133,24 +132,42 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
       // ANY OVERLAP = hit (ball radius included)
       final hitMargin = 0.8 * ballRadius;
 
+      // if collision detected, bounce based on hit position and remove block
       if ((ballX + hitMargin > blockLeft &&
           ballX - hitMargin < blockRight) &&
           (ballY + hitMargin > blockTop &&
           ballY - hitMargin < blockBottom)) {
-        // Bounce direction: closer to side hit
-        final centerX = (blockLeft + blockRight) / 2;
-        final centerY = (blockTop + blockBottom) / 2;
-        final dx = (ballX - centerX).abs();
-        final dy = (ballY - centerY).abs();
+        // Find closest edge and push ball outside
+        double overlapX = 0.0;
+        double overlapY = 0.0;
         
-        if (dx > dy) {
-          vy = -vy;  // Horizontal-ish hit (top/bottom)
-        } else {
-          vx = -vx;  // Vertical-ish hit (sides)
+        // Horizontal push
+        if (ballX < blockLeft) {
+          overlapX = blockLeft - ballX;
+          ballX = blockLeft - ballRadius - 1;  // Push left
+        } else if (ballX > blockRight) {
+          overlapX = ballX - blockRight;
+          ballX = blockRight + ballRadius + 1;  // Push right
         }
         
+        // Vertical push
+        if (ballY < blockTop) {
+          overlapY = blockTop - ballY;
+          ballY = blockTop - ballRadius - 1;  // Push up
+        } else if (ballY > blockBottom) {
+          overlapY = ballY - blockBottom;
+          ballY = blockBottom + ballRadius + 1;  // Push down
+        }
+        
+        // Choose biggest push direction (less overlap)
+        if (overlapX > overlapY) {
+          vx = -vx;  // Horizontal bounce
+        } else {
+          vy = -vy;  // Vertical bounce
+        }
+
+        // Remove block and update score
         blocks.removeAt(i);
-        // setState(() {}); // Update UI immediately after block removal 
         score += 10;
         if (soundOn) sfxPlayer.play(AssetSource('sounds/destroy.wav'));
         hitBlock = true;
@@ -185,19 +202,22 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
     }
 
     // 4. MOVE BALL (post-collision)
-    ballX += vx * dt * 60;
-    ballY += vy * dt * 60;
+    final double speedScale = 60.0;
+
+    ballX += vx * speedScale * dt;
+    ballY += vy * speedScale * dt;
+
 
     // 5. SPEED CAP - keeps paddle boost but prevents runaway
     final maxSpeed = 12.0;
-    final speed = sqrt(vx * vx + vy * vy);
+    final ballSpeed = sqrt(vx * vx + vy * vy);
 
     // Cap downward speed before row 3
     if (vy > 7.5) vy = 7.5; // vy=7.5px/frame < 25px block = no tunnel
 
-    if (speed > maxSpeed) {
-      vx = vx * (maxSpeed / speed);
-      vy = vy * (maxSpeed / speed);
+    if (ballSpeed > maxSpeed) {
+      vx = vx * (maxSpeed / ballSpeed);
+      vy = vy * (maxSpeed / ballSpeed);
     }
 
     // 6. WALLS + FRAME COLLISION (push ball fully inside)
@@ -246,10 +266,10 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
       score = 0;
       gameWon = false;
       gameLost = false;
-      ballX = screenWidth / 2;
-      ballY = 400.0;
-      vx = 3.0;
-      vy = 4.0;
+      ballX = 20.0;
+      ballY = 380.0;
+      vx = 4.0;
+      vy = 5.0;
       paddleX = screenWidth / 2 - 50;
     });
   }
@@ -322,8 +342,8 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
                 bottom: 150,
                 left: paddleX,
                 child: Container(
-                  width: 150,
-                  height: 30,
+                  width: paddleWidth,
+                  height: paddleHeight,
                   decoration: BoxDecoration(
                     color: const Color(0xFFADD8E6),
                     borderRadius: BorderRadius.circular(10),
@@ -343,7 +363,8 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
                         Text('BOUNCER', 
                         style: GoogleFonts.cherryCreamSoda(
                           color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)
-                        ),                        Spacer(),
+                        ),
+                        Spacer(),
                         IconButton(icon: Icon(Icons.pause, size: 30, color: Colors.white), 
                           onPressed: () => setState(() => paused = !paused)),
                         IconButton(icon: Icon(soundOn ? Icons.volume_up : Icons.volume_off, size: 30, color: Colors.white,), 
@@ -365,10 +386,6 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
                         Text('Score: $score | Blocks: ${blocks.length}', 
                           style: GoogleFonts.poppins(color: Colors.white)
                         ),
-                        // Spacer(),
-                        // Text('Tilt: ${lastTilt.toStringAsFixed(1)} P:${paddleX.toStringAsFixed(0)}', 
-                        //   style: GoogleFonts.poppins(color: Colors.white)
-                        // ),
                       ],
                     ),
                     SizedBox(height: 10),
