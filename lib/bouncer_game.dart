@@ -16,6 +16,10 @@ class BouncerGame extends StatefulWidget {
 }
 
 class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin {
+  // ═════════════════════════════════════════════════════════════════
+  // ------------------------- GAME SETUP ----------------------------
+  // ═════════════════════════════════════════════════════════════════
+
   late AnimationController _controller;
   late AudioPlayer destroyBlockPlayer;
   late AudioPlayer winPlayer;
@@ -36,14 +40,18 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
   // Constants 
   static const double paddleWidth = 180.0;
   static const double paddleHeight = 20.0;
-  static const double sensitivity = 500.0;
+  static const double sensitivity = 350.0;
   static const double smoothing = 0.15;
   static const double fixedDeltaTime = 1 / 60.0;
-  static const double playTop = 120.0;
+  static const double playTop = 150.0;
   static const double maxSpeed = 12.0;
   static const double cornerZone = 0.5 * 10.0; 
 
-  // Game state
+
+  // ═════════════════════════════════════════════════════════════════
+  // ------------------------- GAME STATE ----------------------------
+  // ═════════════════════════════════════════════════════════════════
+
   StreamSubscription<UserAccelerometerEvent>? accelSubscription;
   double accumulatedTime = 0.0;
   double tilt = 0.0;
@@ -57,6 +65,12 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
 
   List<Color> get blockColors => create_blocks.createBlockColors();
 
+
+  // ═════════════════════════════════════════════════════════════════
+  // ------------------------- GAME LOGIC ----------------------------
+  // ═════════════════════════════════════════════════════════════════
+
+  // ----- 1. INITIALIZATION (Flutter lifecycle)
   @override
   void initState() {
     super.initState();
@@ -89,13 +103,26 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
     ).toList();
   }
 
+  // ════════════════════════════════════════════
+  // ----- 2. INPUT SYSTEMS (sensors, controllers)
   void _setupSensors() {
     accelSubscription = userAccelerometerEventStream().listen((event) {
       if (!isGameActive) return;
+
       tilt = event.x;
-      if (tilt.abs() > 0.25) {
+
+      if (tilt.abs() > 0.2) {
         final newTarget = (screenWidth / 2) + (tilt * sensitivity);
-        targetPaddleX += (newTarget - targetPaddleX) * smoothing;
+
+        // DUAL SMOOTHING
+        double dynamicSmoothing = 0.35;  // BASE: 2x faster than 0.15
+        
+        // EXTRA BOOST if far from target (>50px)
+        if ((newTarget - targetPaddleX).abs() > 50) {
+          dynamicSmoothing = 0.6;  // 4x original speed!
+        } 
+
+        targetPaddleX += (newTarget - targetPaddleX) * dynamicSmoothing;
         targetPaddleX = targetPaddleX.clamp(0.0, screenWidth - paddleWidth);
       }
     });
@@ -106,6 +133,8 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
     _controller.addListener(_gameLoop);
   }
 
+  // ════════════════════════════════════════════
+  // ----- 3. MAIN GAME LOOP (60fps heartbeat)
   void _gameLoop() {
     accumulatedTime += 1 / 60.0;
     while (accumulatedTime >= fixedDeltaTime) {
@@ -121,12 +150,10 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
     _updatePaddlePosition();
     ball.move(dt, 60.0);
 
-    // ════════════════════════════════════════════
     // SPEED HELPER (comment out for FAST mode!)
     // TAME SPEED EARLY 
     if (ball.vx.abs() > 7.0) ball.vx *= 0.98;  
     if (ball.vy.abs() > 7.0) ball.vy *= 0.98;
-    // ════════════════════════════════════════════
 
     _handleWallCollisions();
     _handleBlockCollisions();
@@ -140,6 +167,8 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
     paddleX = paddleX.clamp(0.0, screenWidth - paddleWidth);
   }
 
+  // ════════════════════════════════════════════
+  // ----- 4. PHYSICS & COLLISIONS (ball movement, bounces)
   void _handleWallCollisions() {
     const double gameLeft = 10;
     final double gameRight = screenWidth + 10;
@@ -249,6 +278,8 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
     }
   }
 
+  // ════════════════════════════════════════════
+  // ----- 5. GAME SYSTEMS (win/lose, audio, restart)
   void _checkWinLoseConditions() {
     // Lose condition
     if (ball.y + ball.radius * 2 >= screenHeight && !gameLost) {
@@ -298,6 +329,10 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
     losePlayer.dispose();
     super.dispose();
   }
+
+  // ═════════════════════════════════════════════════════════════════
+  // ------------------------- GAME UI -------------------------------
+  // ═════════════════════════════════════════════════════════════════
 
   @override
   Widget build(BuildContext context) {
@@ -364,12 +399,13 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
                 ),
               ),
 
-              // HUD
+              // HUD - game dashboard
               Positioned(
                 top: 50,
                 left: 20,
                 right: 10,
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(children: [
                       Text('BOUNCER',
@@ -379,25 +415,25 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
                               fontWeight: FontWeight.bold)),
                       const Spacer(),
                       IconButton(
-                          icon: const Icon(Icons.pause, size: 30, color: Colors.white),
+                          icon: const Icon(Icons.pause, size: 28, color: Colors.white),
                           onPressed: () => setState(() => paused = !paused)),
                       IconButton(
                           icon: Icon(soundOn ? Icons.volume_up : Icons.volume_off,
-                              size: 30, color: Colors.white),
+                              size: 28, color: Colors.white),
                           onPressed: () => setState(() => soundOn = !soundOn)),
                     ]),
                     Text('Tilt device to bounce ball and clear blocks!',
-                        style: GoogleFonts.poppins(color: Colors.white)),
+                      style: GoogleFonts.poppins(color: Colors.white,)),
                     const SizedBox(height: 5),
                     Row(children: [
                       const Icon(Icons.sports_esports_outlined,
-                          size: 18, color: Colors.white),
+                          size: 20, color: Colors.white),
                       const SizedBox(width: 5),
                       Text('Score: $score',
-                          style: GoogleFonts.poppins(color: Colors.white)),
+                          style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
                       const Spacer(),
-                      Text('Blocks: ${blocks.length}',
-                          style: GoogleFonts.poppins(color: Colors.white)),
+                      Text('Remaining Blocks: ${blocks.length}',
+                          style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
                     ]),
                   ],
                 ),
@@ -436,7 +472,7 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
                                   borderRadius: BorderRadius.circular(8)),
                             ),
                             child: Text(
-                              'Restart',
+                              'Play again',
                               style: GoogleFonts.poppins(
                                   fontSize: 18,
                                   color: Colors.white,
