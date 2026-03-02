@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'bouncer_blocks.dart';
+import 'ball.dart';
+import 'block.dart';
+import 'block.dart' as create_blocks;
 
 class BouncerGame extends StatefulWidget {
   const BouncerGame({super.key});
@@ -13,7 +15,7 @@ class BouncerGame extends StatefulWidget {
   State<BouncerGame> createState() => _BouncerGameState();
 }
 
-class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin{
+class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin {
   late AnimationController _controller;
   late AudioPlayer destroyBlockPlayer;
   late AudioPlayer winPlayer;
@@ -23,278 +25,265 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
   double screenWidth = 400.0;
   double screenHeight = 800.0;
 
-  // Blocks
-  late List<Map<String, dynamic>> blocks; // ← created from helper function
-  final List<Color> blockColors = createBouncerBlockColors(); // colors from helper
-
-  // Ball
-  double ballX = 20.0; // Start position (top-left of ball)
-  double ballY = 380.0; // Start position
-  final double ballRadius = 10.0;
+  // Game objects
+  late Ball ball;
+  List<Block> blocks = [];
 
   // Paddle
-  final double paddleHeight = 20.0;
-  final double paddleWidth = 180.0;
-  double paddleX = 0.0; // Paddle start position (updated in initState)
+  double paddleX = 0.0;
+  double targetPaddleX = 0.0;
 
-  // Paddle control 
-  // static const double normalSensitivity = 350.0;  // How far paddle moves per tilt: higher=faster 
-  static const double sensitivity = 400.0; // Can be adjusted for difficulty
-  static const double smoothing = 0.25;  // Speed of paddle slide: 0.1=smooth, 0.3=quick, 0.5=instant
+  // Constants 
+  static const double paddleWidth = 180.0;
+  static const double paddleHeight = 20.0;
+  static const double sensitivity = 400.0;
+  static const double smoothing = 0.25;
+  static const double fixedDeltaTime = 1 / 60.0;
+  static const double playTop = 150.0;
+  static const double maxSpeed = 12.0;
+  static const double cornerZone = 0.5 * 10.0; // ballRadius
+  static const double wallPadding = 5.0;
 
-  // Ball velocity (pixels per frame)
-  double vx = 4.0; // horizontal speed
-  double vy = 5.0; // vertical speed, positive=down
-
-  // Accelerometer subscription
-  late StreamSubscription<UserAccelerometerEvent> accelSubscription;
-  double targetPaddleX = 0.0;  // Smooth target
+  // Game state
+  StreamSubscription<UserAccelerometerEvent>? accelSubscription;
   double accumulatedTime = 0.0;
-  final double fixedDeltaTime = 1/60.0; // ~16ms per frame
-  double tilt = 0.0;  // Current tilt value for display
-
-  bool get isGameActive => !paused && !gameWon && !gameLost;
+  double tilt = 0.0;
   bool soundOn = true;
   bool paused = false;
   bool gameWon = false;
   bool gameLost = false;
   int score = 0;
 
-  // ======== ====== Game initialize ======== ========
+  bool get isGameActive => !paused && !gameWon && !gameLost;
+
+  List<Color> get blockColors => create_blocks.createBlockColors();
 
   @override
   void initState() {
     super.initState();
+    _initializeAudio();
+    _initializeGame();
+    _setupSensors();
+    _setupAnimationController();
+  }
+
+  void _initializeAudio() {
     destroyBlockPlayer = AudioPlayer();
     winPlayer = AudioPlayer();
     losePlayer = AudioPlayer();
+  }
 
+  void _initializeGame() {
+    // Create ball and blocks
+    ball = Ball(x: screenWidth / 2, y: screenHeight / 2);
+    blocks = _createBlocksFromMaps(create_blocks.createBlocks());
 
-    // Initialize blocks from helper function
-    blocks = createBouncerBlocks(); 
-
-    // Center paddle at start
+    // Center paddle
     final centerX = screenWidth / 2 - paddleWidth / 2;
     paddleX = centerX;
     targetPaddleX = centerX;
+  }
 
-    // DURING GAMEPLAY: Listen to accelerometer for paddle control
-    accelSubscription = userAccelerometerEventStream().listen(
-      (UserAccelerometerEvent event) {
-        if (!isGameActive) return;
+  List<Block> _createBlocksFromMaps(List<Map<String, dynamic>> maps) {
+    return maps.map((map) => 
+      Block(x: map['x'], y: map['y'], colorIndex: map['colorIndex'])
+    ).toList();
+  }
 
-          tilt = event.x; 
-
-        // Very small deadzone: ignore tiny noise only
-        if (tilt.abs() > 0.2) { // deadzone threshold: ignore very small tilts
-            double newTarget = (screenWidth / 2) + (tilt * sensitivity);
-
-          // SMOOTH the TARGET too! (stops jerking)
-          targetPaddleX += (newTarget - targetPaddleX) * smoothing;
-          targetPaddleX = targetPaddleX.clamp(0.0, screenWidth - paddleWidth);
-        }        
-      },
-    );
-
-    // Animation for game loop (calls setState every frame)
-    _controller = AnimationController(
-      vsync: this,
-      duration: Duration(seconds: 1), // ignored for game
-    )..repeat(); // loop forever
-
-    // Update game state on each frame, using fixed timestep for consistent physics
-    _controller.addListener(() {
-      final delta = 1/60.0; // Approximate frame delta
-      accumulatedTime += delta;
-      while (accumulatedTime >= fixedDeltaTime) {
-        updatePositions(fixedDeltaTime);
-        accumulatedTime -= fixedDeltaTime;
+  void _setupSensors() {
+    accelSubscription = userAccelerometerEventStream().listen((event) {
+      if (!isGameActive) return;
+      tilt = event.x;
+      if (tilt.abs() > 0.2) {
+        final newTarget = (screenWidth / 2) + (tilt * sensitivity);
+        targetPaddleX += (newTarget - targetPaddleX) * smoothing;
+        targetPaddleX = targetPaddleX.clamp(0.0, screenWidth - paddleWidth);
       }
-      setState(() {}); // Update UI every frame
     });
   }
 
-  // ======== ====== Game logic ======== ========
+  void _setupAnimationController() {
+    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 1))..repeat();
+    _controller.addListener(_gameLoop);
+  }
 
-  void updatePositions(double dt) {
+  void _gameLoop() {
+    accumulatedTime += 1 / 60.0;
+    while (accumulatedTime >= fixedDeltaTime) {
+      _gameStep(fixedDeltaTime);
+      accumulatedTime -= fixedDeltaTime;
+    }
+    setState(() {});
+  }
+
+  void _gameStep(double dt) {
     if (!isGameActive) return;
 
-    // 0. SMOOTH PADDLE - responds to tilt
-    paddleX += (targetPaddleX - paddleX) * smoothing; // Move a fraction towards target
+    _updatePaddlePosition();
+    ball.move(dt, 60.0);
+ 
+    _capBallSpeed();
+    _handleWallCollisions();
+    _handleBlockCollisions();
+    _handlePaddleCollision();
+    _checkWinLoseConditions();
+  }
+
+  void _capBallSpeed() {
+    final speed = sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+    if (speed > maxSpeed) {
+      ball.vx = ball.vx * (maxSpeed / speed);
+      ball.vy = ball.vy * (maxSpeed / speed);
+    }
+  }
+
+  void _updatePaddlePosition() {
+    paddleX += (targetPaddleX - paddleX) * smoothing;
     paddleX = paddleX.clamp(0.0, screenWidth - paddleWidth);
+  }
 
-    // 1. MOVE BALL FIRST - then check collisions (prevents tunneling)
-    final double speedScale = 60.0;
+  void _handleWallCollisions() {
+    // CEILING
+    if (ball.y <= playTop) {
+      ball.y = playTop + ball.radius;
+      ball.vy = -ball.vy;
+    }
+    // LEFT wall
+    if (ball.x <= wallPadding) {
+      ball.x = ball.radius + wallPadding;  // Push out to prevent sticking             
+      ball.vx = -ball.vx;
+    }
+    
+    // RIGHT wall  
+    if (ball.x + ball.radius * 2 >= screenWidth) {
+      ball.x = screenWidth - ball.radius * 2;  // Push out to prevent sticking
+      ball.vx = -ball.vx;
+    }
+  }
 
-    ballX += vx * speedScale * dt;
-    ballY += vy * speedScale * dt;
-
-    // 2. BLOCKS COLLISION 
-    bool hitBlock = false; // To prevent multiple hits in one frame
-
-    // Backwards loop to safely remove blocks while iterating
-    for (int i = blocks.length - 1; i >= 0 && !hitBlock; i--) {
+  void _handleBlockCollisions() {
+    for (int i = blocks.length - 1; i >= 0; i--) {
       final block = blocks[i];
-      final drawX = block['x']! - 15; 
-      final drawY = block['y']! + 50;
+      final drawX = block.x - 15;
+      final drawY = block.y + 50;
       final blockLeft = drawX;
       final blockRight = drawX + 55;
       final blockTop = drawY;
       final blockBottom = drawY + 25;
       
-      // ANY OVERLAP = hit (ball radius included)
-      final hitMargin = blocks.length > 1 ? 0.5 * ballRadius : 1.5 * ballRadius; 
+      final hitMargin = blocks.length > 1 ? 0.5 * ball.radius : 1.5 * ball.radius;
 
-      // if collision detected, bounce based on hit position and remove block
-      if ((ballX + hitMargin > blockLeft &&
-          ballX - hitMargin < blockRight) &&
-          (ballY + hitMargin > blockTop &&
-          ballY - hitMargin < blockBottom)) {
-        // Find closest edge and push ball outside
-        double overlapX = 0.0;
-        double overlapY = 0.0;
+      if ((ball.x + hitMargin > blockLeft &&
+          ball.x - hitMargin < blockRight) &&
+          (ball.y + hitMargin > blockTop &&
+          ball.y - hitMargin < blockBottom)) {
         
-        // Horizontal push
-        if (ballX < blockLeft) {
-          overlapX = blockLeft - ballX;
-          ballX = blockLeft - ballRadius - 1;  // Push left
-        } else if (ballX > blockRight) {
-          overlapX = ballX - blockRight;
-          ballX = blockRight + ballRadius + 1;  // Push right
+        // Push ball out and bounce
+        double overlapX = 0.0, overlapY = 0.0;
+        if (ball.x < blockLeft) {
+          overlapX = blockLeft - ball.x;
+          ball.x = blockLeft - ball.radius - 1;
+        } else if (ball.x > blockRight) {
+          overlapX = ball.x - blockRight;
+          ball.x = blockRight + ball.radius + 1;
+        }
+        if (ball.y < blockTop) {
+          overlapY = blockTop - ball.y;
+          ball.y = blockTop - ball.radius - 1;
+        } else if (ball.y > blockBottom) {
+          overlapY = ball.y - blockBottom;
+          ball.y = blockBottom + ball.radius + 1;
         }
         
-        // Vertical push
-        if (ballY < blockTop) {
-          overlapY = blockTop - ballY;
-          ballY = blockTop - ballRadius - 1;  // Push up
-        } else if (ballY > blockBottom) {
-          overlapY = ballY - blockBottom;
-          ballY = blockBottom + ballRadius + 1;  // Push down
-        }
-        
-        // Choose biggest push direction (less overlap)
         if (overlapX > overlapY) {
-          vx = -vx;  // Horizontal bounce
+          ball.vx = -ball.vx;
         } else {
-          vy = -vy;  // Vertical bounce
+          ball.vy = -ball.vy;
         }
 
-        // Remove block and update score
+        // Remove block
         blocks.removeAt(i);
         score += 10;
-        if (soundOn){
-          final player = AudioPlayer();
-          player.play(AssetSource('sounds/destroy.wav'));
-          player.setVolume(1.0);
-          // destroyBlockPlayer.stop(); 
-          // destroyBlockPlayer.play(AssetSource('sounds/destroy.wav'));
-        }
-        hitBlock = true;
-        break;  
+        _playDestroySound();
+        break;
       }
     }
+  }
 
-    // 3. PADDLE COLLISION 
+  void _handlePaddleCollision() {
     final paddleLeft = paddleX;
-    final paddleRight = paddleX + paddleWidth; 
-    final paddleTop = screenHeight - 180; // 150 + 30 (paddle height) = 180
-    final paddleBottom = screenHeight - 150; 
-    final cornerZone = 0.5 * ballRadius; 
+    final paddleRight = paddleX + paddleWidth;
+    final paddleBottom = screenHeight - 150;   
+    final paddleTop = paddleBottom - paddleHeight;  
+    
+    // Ball center + radius vs paddle
+    final ballBottom = ball.y + ball.radius;
+    final ballTop = ball.y - ball.radius;
+    final ballLeft = ball.x - ball.radius;
+    final ballRight = ball.x + ball.radius;
 
-    if (ballY + ballRadius >= paddleTop && 
-        ballY <= paddleBottom + ballRadius * 2 &&  
-        ballX + ballRadius >= paddleLeft && 
-        ballX - ballRadius <= paddleRight &&
-        (ballX > cornerZone || ballX + ballRadius*2 < screenWidth - cornerZone)) {
+    // Check if ball overlaps paddle vertically AND horizontally
+    if (ballBottom >= paddleTop && 
+        ballTop <= paddleBottom &&  
+        ballRight >= paddleLeft && 
+        ballLeft <= paddleRight &&
+        (ballLeft > cornerZone || ballRight < screenWidth - cornerZone)) {
 
-      ballY = paddleTop - ballRadius - 2.5;  
-      final paddleCenter = paddleX + 75;
-      final hitPos = (ballX - paddleCenter) / 75.0;
+      // Push ball above paddle
+      ball.y = paddleTop - ball.radius;
       
-      vy = -vy.abs() * 1.08;  // Fixed syntax + faster bounce
-      vx = hitPos * 8.0;  // Sharper angles
+      // Angle based on hit position
+      final paddleCenter = paddleX + paddleWidth / 2;
+      final hitPos = (ball.x - paddleCenter) / (paddleWidth / 2);
+      
+      ball.vy = -ball.vy.abs() * 1.08;  // Bounce up faster
+      ball.vx = hitPos * 8.0;          // Left/right angle
     }
+  }
 
-    // 4. CEILING COLLISION - prevents ball from getting stuck in blocks
-    final playTop = 150.0;
-    if (ballY <= playTop) {
-      vy = -vy;
-      ballY = playTop + ballRadius;
-    }
-
-
-    // 5. SPEED CAP - keeps paddle boost but prevents runaway
-    final maxSpeed = 12.0;
-    final ballSpeed = sqrt(vx * vx + vy * vy);
-
-    // Cap downward speed before row 3
-    if (vy > 7.5) vy = 7.5; // vy=7.5px/frame < 25px block = no tunnel
-
-    if (ballSpeed > maxSpeed) {
-      vx = vx * (maxSpeed / ballSpeed);
-      vy = vy * (maxSpeed / ballSpeed);
-    }
-
-    // 6. WALLS + FRAME COLLISION (push ball fully inside)
-    // LEFT / RIGHT
-    final ballLeft = ballX;
-    final ballRight = ballX + ballRadius * 2;
-
-    if (ballLeft <= 0) {
-      ballX = 0;                    // push to left edge
-      vx = -vx;
-    } else if (ballRight >= screenWidth) {
-      ballX = screenWidth - ballRadius * 2;  // push to right edge
-      vx = -vx;
-    }
-
-    // TOP (bounce)
-    if (ballY <= 0) {
-      ballY = 0;
-      vy = -vy;
-    }
-
-    // 7. WIN/LOSE MESSAGES (after blocks change)
-    // do NOT bounce at bottom; just detect lose
-    if (ballY + ballRadius * 2 >= screenHeight && !gameLost) {
-      // ball touched bottom edge
-      if (soundOn) losePlayer.play(AssetSource('sounds/youlost.mp3'));
+  void _checkWinLoseConditions() {
+    // Lose condition
+    if (ball.y + ball.radius * 2 >= screenHeight && !gameLost) {
+      if (soundOn)     losePlayer.play(AssetSource('sounds/youlost.mp3'));
       gameLost = true;
       return;
     }
 
+    // Win condition
     if (blocks.isEmpty && !gameWon) {
       if (soundOn) winPlayer.play(AssetSource('sounds/youwin.mp3'));
       gameWon = true;
-    } 
+    }
   }
-  
 
-  // ======== ====== Game restart ======== ========
+  void _playDestroySound() {
+    if (soundOn) {
+      destroyBlockPlayer.play(AssetSource('sounds/destroy.wav'));
+      destroyBlockPlayer.setVolume(1.0);
+    }
+  }
 
   void restart() {
     winPlayer.stop();
     losePlayer.stop();
     destroyBlockPlayer.stop();
 
-    setState(() {  
-      blocks = createBouncerBlocks(); // Reset blocks from helper function
+    setState(() {
+      blocks = _createBlocksFromMaps(create_blocks.createBlocks());
       accumulatedTime = 0.0;
       score = 0;
       gameWon = false;
       gameLost = false;
-      ballX = 20.0;
-      ballY = 380.0;
-      vx = 4.0;
-      vy = 5.0;
-      paddleX = screenWidth / 2 - paddleWidth / 2; // Center paddle
-      targetPaddleX = screenWidth / 2 - paddleWidth / 2;  
+      ball = Ball(x: 20.0, y: 380.0);
+      final centerX = screenWidth / 2 - paddleWidth / 2;
+      paddleX = centerX;
+      targetPaddleX = centerX;
     });
   }
 
   @override
   void dispose() {
-    accelSubscription.cancel();
+    accelSubscription?.cancel();
     _controller.dispose();
     destroyBlockPlayer.dispose();
     winPlayer.dispose();
@@ -302,7 +291,6 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
     super.dispose();
   }
 
-  // ======== ====== UI build ======== ========
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -313,28 +301,25 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
 
           return Stack(
             children: [
-              // Game background
+              // Background
               Container(color: Colors.black),
 
-              // Game Element: Colorful Blocks 
+              // Blocks
               ...blocks.map((block) {
-                final rawIndex = block['colorIndex'];
-                final colorIndex = rawIndex is num ? rawIndex.toInt() : 0;
-
+                final colorIndex = block.colorIndex;
                 return Positioned(
-                  top: block['y']! + 50,
-                  left: block['x']! - 15,
+                  top: block.y + 50,
+                  left: block.x - 15,
                   child: Container(
                     width: 56,
                     height: 25,
                     decoration: BoxDecoration(
                       color: blockColors[colorIndex],
                       borderRadius: BorderRadius.circular(3),
-                      // border: Border.all(color: Colors.white, width: 1),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black26,
-                          offset: Offset(2, 2),
+                          offset: const Offset(2, 2),
                           blurRadius: 2,
                         ),
                       ],
@@ -343,21 +328,21 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
                 );
               }),
 
-              // Game Element: Ball
+              // Ball
               Positioned(
-                top: ballY,
-                left: ballX,
+                top: ball.y - ball.radius,
+                left: ball.x - ball.radius,
                 child: Container(
-                  width: ballRadius * 2,
-                  height: ballRadius * 2,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFF69B4), 
+                  width: ball.radius * 2,
+                  height: ball.radius * 2,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFFF69B4),
                     shape: BoxShape.circle,
                   ),
                 ),
               ),
 
-              // Game Element: Paddle
+              // Paddle
               Positioned(
                 bottom: 150,
                 left: paddleX,
@@ -371,57 +356,50 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
                 ),
               ),
 
-              // HUD: Score, blocks left, tilt, pause/sound buttons
+              // HUD
               Positioned(
                 top: 50,
                 left: 20,
                 right: 10,
                 child: Column(
                   children: [
-                    Row(  // Title + pause + sound
-                      children: [
-                        Text('BOUNCER', 
-                        style: GoogleFonts.cherryCreamSoda(
-                          color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)
-                        ),
-                        Spacer(),
-                        IconButton(icon: Icon(Icons.pause, size: 30, color: Colors.white), 
+                    Row(children: [
+                      Text('BOUNCER',
+                          style: GoogleFonts.cherryCreamSoda(
+                              color: Colors.white,
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold)),
+                      const Spacer(),
+                      IconButton(
+                          icon: const Icon(Icons.pause, size: 30, color: Colors.white),
                           onPressed: () => setState(() => paused = !paused)),
-                        IconButton(icon: Icon(soundOn ? Icons.volume_up : Icons.volume_off, size: 30, color: Colors.white,), 
+                      IconButton(
+                          icon: Icon(soundOn ? Icons.volume_up : Icons.volume_off,
+                              size: 30, color: Colors.white),
                           onPressed: () => setState(() => soundOn = !soundOn)),
-                      ],
-                    ),
-                    Row(
-                      children: [
-                        Text('Tilt device to bounce ball and clear blocks!', 
-                          style: GoogleFonts.poppins(color: Colors.white)
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: 5),
-                    Row(
-                      children: [
-                        Icon(Icons.sports_esports_outlined, size: 18, color: Colors.white),
-                        SizedBox(width: 5),
-                        Text('Score: $score', 
-                          style: GoogleFonts.poppins(color: Colors.white)
-                        ),
-                        Spacer(),
-                        Text('Blocks: ${blocks.length}', 
-                          style: GoogleFonts.poppins(color: Colors.white)
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: 10),
+                    ]),
+                    Text('Tilt device to bounce ball and clear blocks!',
+                        style: GoogleFonts.poppins(color: Colors.white)),
+                    const SizedBox(height: 5),
+                    Row(children: [
+                      const Icon(Icons.sports_esports_outlined,
+                          size: 18, color: Colors.white),
+                      const SizedBox(width: 5),
+                      Text('Score: $score',
+                          style: GoogleFonts.poppins(color: Colors.white)),
+                      const Spacer(),
+                      Text('Blocks: ${blocks.length}',
+                          style: GoogleFonts.poppins(color: Colors.white)),
+                    ]),
                   ],
                 ),
               ),
 
-              // Win/Lose overlay + Restart button
+              // Game Over Overlay
               if (gameWon || gameLost)
                 Positioned.fill(
                   child: Container(
-                    color: Colors.black87,  // Semi-dark overlay
+                    color: Colors.black87,
                     child: Center(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -431,24 +409,31 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
                             size: 80,
                             color: gameWon ? Colors.amber : Colors.orangeAccent,
                           ),
-                          SizedBox(height: 15),
+                          const SizedBox(height: 15),
                           Text(
                             gameWon ? 'You Won!' : 'You Lost!',
-                            style: GoogleFonts.cherryCreamSoda(color: Colors.white, fontSize: 40, fontWeight: FontWeight.bold),
+                            style: GoogleFonts.cherryCreamSoda(
+                                color: Colors.white,
+                                fontSize: 40,
+                                fontWeight: FontWeight.bold),
                           ),
-                          SizedBox(height: 20),
+                          const SizedBox(height: 20),
                           ElevatedButton(
                             onPressed: restart,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.orange,
-                              padding: EdgeInsets.symmetric(horizontal: 30, vertical: 14),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 30, vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8)),
                             ),
-                            child: 
-                              Text(
-                                'Restart', 
-                                style: GoogleFonts.poppins(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold)
-                              ),
+                            child: Text(
+                              'Restart',
+                              style: GoogleFonts.poppins(
+                                  fontSize: 18,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold),
+                            ),
                           ),
                         ],
                       ),

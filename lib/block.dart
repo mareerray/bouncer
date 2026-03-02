@@ -1,7 +1,16 @@
-// bouncer_blocks.dart
 import 'dart:ui';
 
-List<Map<String, dynamic>> createBouncerBlocks() {
+class Block {
+  final double x, y;
+  final int colorIndex;
+
+  Block({required this.x, 
+    required this.y, 
+    required this.colorIndex
+  });
+}
+
+List<Map<String, dynamic>> createBlocks() {
   final int numCols = 6;
   final int numRows = 7;
   double screenWidth = 400.0;
@@ -30,7 +39,7 @@ List<Map<String, dynamic>> createBouncerBlocks() {
   return blocks;
 }
 
-List<Color> createBouncerBlockColors() {
+List<Color> createBlockColors() {
   return [
     const Color(0xFF4682B4), // 0 steel blue
     const Color(0xFF32CD32), // 1 lime green
@@ -42,4 +51,3 @@ List<Color> createBouncerBlockColors() {
     const Color(0xFF20B2AA), // 7 light sea green
   ];
 }
-
