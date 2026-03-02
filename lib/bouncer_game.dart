@@ -36,13 +36,12 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
   // Constants 
   static const double paddleWidth = 180.0;
   static const double paddleHeight = 20.0;
-  static const double sensitivity = 400.0;
-  static const double smoothing = 0.25;
+  static const double sensitivity = 500.0;
+  static const double smoothing = 0.15;
   static const double fixedDeltaTime = 1 / 60.0;
-  static const double playTop = 150.0;
+  static const double playTop = 120.0;
   static const double maxSpeed = 12.0;
-  static const double cornerZone = 0.5 * 10.0; // ballRadius
-  static const double wallPadding = 5.0;
+  static const double cornerZone = 0.5 * 10.0; 
 
   // Game state
   StreamSubscription<UserAccelerometerEvent>? accelSubscription;
@@ -94,7 +93,7 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
     accelSubscription = userAccelerometerEventStream().listen((event) {
       if (!isGameActive) return;
       tilt = event.x;
-      if (tilt.abs() > 0.2) {
+      if (tilt.abs() > 0.25) {
         final newTarget = (screenWidth / 2) + (tilt * sensitivity);
         targetPaddleX += (newTarget - targetPaddleX) * smoothing;
         targetPaddleX = targetPaddleX.clamp(0.0, screenWidth - paddleWidth);
@@ -121,20 +120,19 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
 
     _updatePaddlePosition();
     ball.move(dt, 60.0);
- 
-    _capBallSpeed();
+
+    // ════════════════════════════════════════════
+    // SPEED HELPER (comment out for FAST mode!)
+    // TAME SPEED EARLY 
+    if (ball.vx.abs() > 7.0) ball.vx *= 0.98;  
+    if (ball.vy.abs() > 7.0) ball.vy *= 0.98;
+    // ════════════════════════════════════════════
+
     _handleWallCollisions();
     _handleBlockCollisions();
     _handlePaddleCollision();
+    _capBallSpeed();
     _checkWinLoseConditions();
-  }
-
-  void _capBallSpeed() {
-    final speed = sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-    if (speed > maxSpeed) {
-      ball.vx = ball.vx * (maxSpeed / speed);
-      ball.vy = ball.vy * (maxSpeed / speed);
-    }
   }
 
   void _updatePaddlePosition() {
@@ -143,20 +141,22 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
   }
 
   void _handleWallCollisions() {
+    const double gameLeft = 10;
+    final double gameRight = screenWidth + 10;
     // CEILING
     if (ball.y <= playTop) {
       ball.y = playTop + ball.radius;
       ball.vy = -ball.vy;
     }
     // LEFT wall
-    if (ball.x <= wallPadding) {
-      ball.x = ball.radius + wallPadding;  // Push out to prevent sticking             
+    if (ball.x <= gameLeft) {
+      ball.x = ball.radius + gameLeft;  // Push out to prevent sticking             
       ball.vx = -ball.vx;
     }
     
     // RIGHT wall  
-    if (ball.x + ball.radius * 2 >= screenWidth) {
-      ball.x = screenWidth - ball.radius * 2;  // Push out to prevent sticking
+    if (ball.x + ball.radius * 2 >= gameRight) {
+      ball.x = gameRight - (ball.radius * 2);  // Push out to prevent sticking
       ball.vx = -ball.vx;
     }
   }
@@ -171,7 +171,7 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
       final blockTop = drawY;
       final blockBottom = drawY + 25;
       
-      final hitMargin = blocks.length > 1 ? 0.5 * ball.radius : 1.5 * ball.radius;
+      final hitMargin = blocks.length > 1 ? 0.5 * ball.radius : 1.0 * ball.radius;
 
       if ((ball.x + hitMargin > blockLeft &&
           ball.x - hitMargin < blockRight) &&
@@ -196,9 +196,9 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
         }
         
         if (overlapX > overlapY) {
-          ball.vx = -ball.vx;
+          ball.vx = -ball.vx; 
         } else {
-          ball.vy = -ball.vy;
+          ball.vy = -ball.vy; 
         }
 
         // Remove block
@@ -238,6 +238,14 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
       
       ball.vy = -ball.vy.abs() * 1.08;  // Bounce up faster
       ball.vx = hitPos * 8.0;          // Left/right angle
+    }
+  }
+
+  void _capBallSpeed() {
+    final speed = sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+    if (speed > maxSpeed) {
+      ball.vx = ball.vx * (maxSpeed / speed);
+      ball.vy = ball.vy * (maxSpeed / speed);
     }
   }
 
