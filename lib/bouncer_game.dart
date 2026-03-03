@@ -371,6 +371,20 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
                 );
               }),
 
+              // Floor 
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                height: 80,  // Adjust height to fit under paddle
+                child: FittedBox(
+                  fit: BoxFit.fitWidth,
+                  child: Image.asset(
+                    'assets/images/floor_grass.png',
+                  ),
+                ),
+              ),
+
               // Ball
               Positioned(
                 top: ball.y - ball.radius,
@@ -394,7 +408,7 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
                   height: paddleHeight,
                   decoration: BoxDecoration(
                     color: const Color(0xFFADD8E6),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                 ),
               ),
