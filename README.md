@@ -2,13 +2,6 @@
 A retro-style Flutter mobile game inspired by the classic 90s bouncing ball games.
 This project demonstrates how to integrate device hardware sensors, real-time animation, and simple 2D physics in Flutter.
 
-![Bouncer app](assets/images/bouncer.png)
-
-## 📱 Screenshots
-
-| Grid View | Full Image | Full Image Zoom|
-| ---------- | ---------------- | --------- |
-| ![Fav Images](assets/images/favimages.png) | ![Full Image](assets/images/fullimage.png) | ![Full Image Zoom](assets/images/fullimagezoom.png) |   
 
 ## 🎮 Overview
 Bouncer challenges the player to destroy all the blocks on the screen using a bouncing ball.
@@ -16,13 +9,16 @@ Instead of using traditional touch controls, the player tilts their physical dev
 The main goal is to keep the ball from falling off the bottom of the screen while clearing all blocks.
 
 ## ✨ Key Features
-Hardware Sensor Integration: Uses the sensors_plus package to map phone tilt to paddle movement.
+- Hardware Sensor Integration: Uses the sensors_plus package to map phone tilt to paddle movement.
 
-Physics-Based Gameplay: Follows the law of reflection — the angle of incidence equals the angle of reflection during collisions.
+- Physics-Based Gameplay: Follows the law of reflection — the angle of incidence equals the angle of reflection during collisions.
 
-Smooth Real-Time Animation: Powered by Flutter’s AnimationController or Ticker for fast, smooth gameplay.
+- Smooth Real-Time Animation: Powered by Flutter’s AnimationController or Ticker for fast, smooth gameplay.
 
-Accurate 2D Positioning: Built using Stack and Positioned widgets for pixel-perfect control of game elements.
+- Accurate 2D Positioning: Built using Stack and Positioned widgets for pixel-perfect control of game elements.
+
+![Bouncer app](assets/images/bouncer.png)
+
 
 ## 🕹️ Game Rules
 
@@ -35,10 +31,18 @@ Accurate 2D Positioning: Built using Stack and Positioned widgets for pixel-perf
 | Losing	| If the ball touches the bottom, the game ends with a "You Lost!" message. |
 | Paddle Limits	| The paddle cannot move outside the screen boundary. |
 
+## 📱 Screenshots
+
+| Grid View | Full Image | Full Image Zoom|
+| ---------- | ---------------- | --------- |
+| ![Bouncer game](assets/images/bouncer_game.jpg) | ![You won](assets/images/youwon.jpg) | ![You lost](assets/images/youlost.jpg) |   
+
 ## 🚀 Getting Started
 
 ### Prerequisites
 - Flutter SDK installed
+- sensors_plus version 7.0.0
+- audioplayers version 6.0.0
 - A physical mobile device (emulators do not support accelerometer-based input)
 
 ### Installation Steps

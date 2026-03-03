@@ -28,6 +28,7 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
   // Screen size
   double screenWidth = 400.0;
   double screenHeight = 800.0;
+  double screenBottomHeight = 20;
 
   // Game objects
   late Ball ball;
@@ -38,14 +39,16 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
   double targetPaddleX = 0.0;
 
   // Constants 
-  static const double paddleWidth = 180.0;
+  static const double paddleWidth = 140.0;
   static const double paddleHeight = 20.0;
-  static const double sensitivity = 350.0;
-  static const double smoothing = 0.15;
+  static const double sensitivity = 500.0; // Tilt → movement distance (higher=faster)
+  static const double smoothing = 0.25; // Paddle follow speed (lower=more smooth)
+  static const double deadZone = 0.12; // Minimum tilt to move paddle
   static const double fixedDeltaTime = 1 / 60.0;
-  static const double playTop = 150.0;
+  static const double ceiling = 150.0;
   static const double maxSpeed = 12.0;
   static const double cornerZone = 0.5 * 10.0; 
+  
 
 
   // ═════════════════════════════════════════════════════════════════
@@ -111,18 +114,12 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
 
       tilt = event.x;
 
-      if (tilt.abs() > 0.2) {
+      if (tilt.abs() > deadZone) {
         final newTarget = (screenWidth / 2) + (tilt * sensitivity);
 
-        // DUAL SMOOTHING
-        double dynamicSmoothing = 0.35;  // BASE: 2x faster than 0.15
-        
-        // EXTRA BOOST if far from target (>50px)
-        if ((newTarget - targetPaddleX).abs() > 50) {
-          dynamicSmoothing = 0.6;  // 4x original speed!
-        } 
-
-        targetPaddleX += (newTarget - targetPaddleX) * dynamicSmoothing;
+        // CONSTANT SMOOTHING 
+        targetPaddleX += (newTarget - targetPaddleX) * smoothing;
+        // Clamp AFTER smoothing
         targetPaddleX = targetPaddleX.clamp(0.0, screenWidth - paddleWidth);
       }
     });
@@ -152,8 +149,8 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
 
     // SPEED HELPER (comment out for FAST mode!)
     // TAME SPEED EARLY 
-    if (ball.vx.abs() > 7.0) ball.vx *= 0.98;  
-    if (ball.vy.abs() > 7.0) ball.vy *= 0.98;
+    if (ball.vx.abs() > 7.0) ball.vx *= 0.95;  
+    if (ball.vy.abs() > 7.0) ball.vy *= 0.95;
 
     _handleWallCollisions();
     _handleBlockCollisions();
@@ -170,22 +167,22 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
   // ════════════════════════════════════════════
   // ----- 4. PHYSICS & COLLISIONS (ball movement, bounces)
   void _handleWallCollisions() {
-    const double gameLeft = 10;
-    final double gameRight = screenWidth + 10;
+    const double wallLeft = 10;
+    final double wallRight = screenWidth + 10;
     // CEILING
-    if (ball.y <= playTop) {
-      ball.y = playTop + ball.radius;
+    if (ball.y <= ceiling) {
+      ball.y = ceiling + ball.radius;
       ball.vy = -ball.vy;
     }
     // LEFT wall
-    if (ball.x <= gameLeft) {
-      ball.x = ball.radius + gameLeft;  // Push out to prevent sticking             
+    if (ball.x <= wallLeft) {
+      ball.x = ball.radius + wallLeft;  // Push out to prevent sticking             
       ball.vx = -ball.vx;
     }
     
     // RIGHT wall  
-    if (ball.x + ball.radius * 2 >= gameRight) {
-      ball.x = gameRight - (ball.radius * 2);  // Push out to prevent sticking
+    if (ball.x + ball.radius * 2 >= wallRight) {
+      ball.x = wallRight - (ball.radius * 2);  // Push out to prevent sticking
       ball.vx = -ball.vx;
     }
   }
@@ -202,10 +199,10 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
       
       final hitMargin = blocks.length > 1 ? 0.5 * ball.radius : 1.0 * ball.radius;
 
-      if ((ball.x + hitMargin > blockLeft &&
-          ball.x - hitMargin < blockRight) &&
-          (ball.y + hitMargin > blockTop &&
-          ball.y - hitMargin < blockBottom)) {
+      if (((ball.x + hitMargin) > blockLeft &&
+          (ball.x - hitMargin) < blockRight) &&
+          ((ball.y + hitMargin) > blockTop &&
+          (ball.y - hitMargin) < blockBottom)) {
         
         // Push ball out and bounce
         double overlapX = 0.0, overlapY = 0.0;
@@ -256,13 +253,13 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
         ballTop <= paddleBottom &&  
         ballRight >= paddleLeft && 
         ballLeft <= paddleRight &&
-        (ballLeft > cornerZone || ballRight < screenWidth - cornerZone)) {
+        (ballLeft > cornerZone || ballRight < (screenWidth - cornerZone))) {
 
       // Push ball above paddle
       ball.y = paddleTop - ball.radius;
       
       // Angle based on hit position
-      final paddleCenter = paddleX + paddleWidth / 2;
+      final paddleCenter = paddleX + (paddleWidth / 2);
       final hitPos = (ball.x - paddleCenter) / (paddleWidth / 2);
       
       ball.vy = -ball.vy.abs() * 1.08;  // Bounce up faster
@@ -271,7 +268,7 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
   }
 
   void _capBallSpeed() {
-    final speed = sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+    final speed = sqrt((ball.vx * ball.vx) + (ball.vy * ball.vy));
     if (speed > maxSpeed) {
       ball.vx = ball.vx * (maxSpeed / speed);
       ball.vy = ball.vy * (maxSpeed / speed);
@@ -282,15 +279,26 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
   // ----- 5. GAME SYSTEMS (win/lose, audio, restart)
   void _checkWinLoseConditions() {
     // Lose condition
-    if (ball.y + ball.radius * 2 >= screenHeight && !gameLost) {
-      if (soundOn)     losePlayer.play(AssetSource('sounds/youlost.mp3'));
+    if (ball.y + ball.radius > screenHeight - screenBottomHeight && !gameLost) {
+       // AUDIT LOG - exact proof
+        // print("=== LOSE TRIGGERED ===");
+        // print("screenHeight: $screenHeight");
+        // print("screenBottomHeight: $screenBottomHeight");
+        // print("grassTopY: ${screenHeight - screenBottomHeight}");
+        // print("ball.y: ${ball.y}");
+        // print("ball.bottom: ${ball.y + ball.radius * 2}");
+        // print("Condition: ball.bottom(${ball.y + ball.radius * 2}) > grassTopY(${screenHeight - screenBottomHeight}) = TRUE");
+        // print("==================");
+      if (soundOn) {
+        losePlayer.play(AssetSource('sounds/youlost.mp3'));
+      }
       gameLost = true;
       return;
     }
 
     // Win condition
     if (blocks.isEmpty && !gameWon) {
-      if (soundOn) winPlayer.play(AssetSource('sounds/youwin.mp3'));
+      if (soundOn) winPlayer.play(AssetSource('sounds/youwon.mp3'));
       gameWon = true;
     }
   }
@@ -314,7 +322,7 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
       gameWon = false;
       gameLost = false;
       ball = Ball(x: 20.0, y: 380.0);
-      final centerX = screenWidth / 2 - paddleWidth / 2;
+      final centerX = (screenWidth / 2) - (paddleWidth / 2);
       paddleX = centerX;
       targetPaddleX = centerX;
     });
@@ -376,7 +384,7 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
                 bottom: 0,
                 left: 0,
                 right: 0,
-                height: 80,  // Adjust height to fit under paddle
+                height: screenBottomHeight,  
                 child: FittedBox(
                   fit: BoxFit.fitWidth,
                   child: Image.asset(
