@@ -8,18 +8,6 @@ Bouncer challenges the player to destroy all the blocks on the screen using a bo
 Instead of using traditional touch controls, the player tilts their physical device to move a paddle horizontally — thanks to accelerometer input.
 The main goal is to keep the ball from falling off the bottom of the screen while clearing all blocks.
 
-## ✨ Key Features
-- Hardware Sensor Integration: Uses the sensors_plus package to map phone tilt to paddle movement.
-
-- Physics-Based Gameplay: Follows the law of reflection — the angle of incidence equals the angle of reflection during collisions.
-
-- Smooth Real-Time Animation: Powered by Flutter’s AnimationController or Ticker for fast, smooth gameplay.
-
-- Accurate 2D Positioning: Built using Stack and Positioned widgets for pixel-perfect control of game elements.
-
-![Bouncer app](assets/images/bouncer.png)
-
-
 ## 🕹️ Game Rules
 
 | Event	                 | Behavior                                   |
@@ -31,9 +19,33 @@ The main goal is to keep the ball from falling off the bottom of the screen whil
 | Losing	| If the ball touches the bottom, the game ends with a "You Lost!" message. |
 | Paddle Limits	| The paddle cannot move outside the screen boundary. |
 
+## ✨ Key Features
+- Hardware Sensor Integration: Uses the sensors_plus package to map phone tilt to paddle movement.
+
+- Physics-Based Gameplay: Follows the law of reflection — the angle of incidence equals the angle of reflection during collisions.
+
+- Smooth Real-Time Animation: Powered by Flutter’s AnimationController or Ticker for fast, smooth gameplay.
+
+- Accurate 2D Positioning: Built using Stack and Positioned widgets for pixel-perfect control of game elements.
+
+![Bouncer app](assets/images/bouncer.png)
+
+## Bonus Features Implemented
+✨ Bonus Features
+- Score Tracking: Increments by 10 points per block destroyed, displayed live for player motivation and achievement tracking.
+
+- Custom Typography: Integrates google_fonts package for authentic retro 90s pixel-style fonts across all UI text elements.
+
+- Pause Controls: Dedicated pause button toggles gameplay state with overlay, perfect for casual play sessions.
+
+- Sound Toggle: Simple mute/unmute switch gives players full audio control without interrupting game flow.
+
+- Visual Variety: createBlockColors() generates 8 distinct vibrant colors per block for unique, eye-catching sessions.
+
+
 ## 📱 Screenshots
 
-| Grid View | Full Image | Full Image Zoom|
+| Bouncer Game | Win screen | Loss screen|
 | ---------- | ---------------- | --------- |
 | ![Bouncer game](assets/images/bouncer_game.jpg) | ![You won](assets/images/youwon.jpg) | ![You lost](assets/images/youlost.jpg) |   
 
@@ -114,6 +126,7 @@ bouncer/
 │   ├── block.dart
 │   └── bouncer_game.dart
 ├── assets/
+│   ├── images/
 │   └── sounds/    
 ├── pubspec.yaml   # manages dependencies and assets
 ````

@@ -135,13 +135,13 @@ class _BouncerGameState extends State<BouncerGame> with TickerProviderStateMixin
   void _gameLoop() {
     accumulatedTime += 1 / 60.0;
     while (accumulatedTime >= fixedDeltaTime) {
-      _gameStep(fixedDeltaTime);
+      _gameUpdate(fixedDeltaTime);
       accumulatedTime -= fixedDeltaTime;
     }
     setState(() {});
   }
 
-  void _gameStep(double dt) {
+  void _gameUpdate(double dt) {
     if (!isGameActive) return;
 
     _updatePaddlePosition();
